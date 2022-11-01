@@ -3,7 +3,7 @@ from django.db.models import Q, UniqueConstraint
 from django.utils import timezone
 from django.utils.translation import ugettext_lazy as _
 
-from sentry.db.models import FlexibleForeignKey, Model, region_silo_model, sane_repr
+from sentry.db.models import FlexibleForeignKey, Model, region_silo_only_model, sane_repr
 from sentry.db.models.fields.text import CharField
 from sentry.models.search_common import SearchType
 
@@ -30,16 +30,13 @@ class SortOptions:
         )
 
 
-@region_silo_model
+@region_silo_only_model
 class SavedSearch(Model):
     """
     A saved search query.
     """
 
     __include_in_export__ = True
-    # TODO: Remove this column and rows where it's not null once we've
-    # completely removed Sentry 9
-    project = FlexibleForeignKey("sentry.Project", null=True)
     organization = FlexibleForeignKey("sentry.Organization", null=True)
     type = models.PositiveSmallIntegerField(default=SearchType.ISSUE.value, null=True)
     name = models.CharField(max_length=128)
@@ -48,10 +45,24 @@ class SavedSearch(Model):
         max_length=16, default=SortOptions.DATE, choices=SortOptions.as_choices(), null=True
     )
     date_added = models.DateTimeField(default=timezone.now)
-    # TODO: Remove this column once we've completely removed Sentry 9
-    is_default = models.BooleanField(default=False)
+
+    # Global searches exist for ALL organizations. A savedsearch marked with
+    # is_global does NOT have an associated organization_id
     is_global = models.NullBooleanField(null=True, default=False, db_index=True)
+
+    # XXX(epurkhiser): This is different from "creator". Owner is a misnomer
+    # for this column, as this actually indicates that the search is "pinned"
+    # by the user. A user may only have one pinned search epr (org, type)
     owner = FlexibleForeignKey("sentry.User", null=True)
+
+    # Deprecated fields
+    #
+    # Prior to Sentry 10 we created "is_default" saved searches for EVERY new
+    # project. Back then searches were associated to project_id. These fields
+    # are not queried on or in use anywhere, after creating a migration to
+    # remove old rows, we should remove these.
+    project = FlexibleForeignKey("sentry.Project", null=True)
+    is_default = models.BooleanField(default=False)
 
     class Meta:
         app_label = "sentry"
@@ -92,7 +103,7 @@ class SavedSearch(Model):
 
 
 # TODO: Remove once we've completely removed sentry 9
-@region_silo_model
+@region_silo_only_model
 class SavedSearchUserDefault(Model):
     """
     Indicates the default saved search for a given user

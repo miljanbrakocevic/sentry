@@ -26,10 +26,9 @@ import {extractSelectionParameters} from 'sentry/components/organizations/pageFi
 import Pagination, {CursorHandler} from 'sentry/components/pagination';
 import {Panel, PanelBody} from 'sentry/components/panels';
 import QueryCount from 'sentry/components/queryCount';
-import {parseSearch} from 'sentry/components/searchSyntax/parser';
 import ProcessingIssueList from 'sentry/components/stream/processingIssueList';
 import {DEFAULT_QUERY, DEFAULT_STATS_PERIOD} from 'sentry/constants';
-import {t, tct} from 'sentry/locale';
+import {t, tct, tn} from 'sentry/locale';
 import GroupStore from 'sentry/stores/groupStore';
 import {PageContent} from 'sentry/styles/organization';
 import {
@@ -50,6 +49,9 @@ import parseApiError from 'sentry/utils/parseApiError';
 import parseLinkHeader from 'sentry/utils/parseLinkHeader';
 import {VisuallyCompleteWithData} from 'sentry/utils/performanceForSentry';
 import {decodeScalar} from 'sentry/utils/queryString';
+import withRouteAnalytics, {
+  WithRouteAnalyticsProps,
+} from 'sentry/utils/routeAnalytics/withRouteAnalytics';
 import withApi from 'sentry/utils/withApi';
 import withIssueTags from 'sentry/utils/withIssueTags';
 import withOrganization from 'sentry/utils/withOrganization';
@@ -60,7 +62,6 @@ import IssueListActions from './actions';
 import IssueListFilters from './filters';
 import GroupListBody from './groupListBody';
 import IssueListHeader from './header';
-import IssueListSidebar from './sidebar';
 import {
   getTabs,
   getTabsWithCounts,
@@ -93,7 +94,8 @@ type Props = {
   savedSearches: SavedSearch[];
   selection: PageFilters;
   tags: TagCollection;
-} & RouteComponentProps<{searchId?: string}, {}>;
+} & RouteComponentProps<{searchId?: string}, {}> &
+  WithRouteAnalyticsProps;
 
 type State = {
   actionTaken: boolean;
@@ -102,7 +104,6 @@ type State = {
   // TODO(Kelly): remove forReview once issue-list-removal-action feature is stable
   forReview: boolean;
   groupIds: string[];
-  isSidebarVisible: boolean;
   issuesLoading: boolean;
   itemsRemoved: number;
   memberList: ReturnType<typeof indexMembersByProject>;
@@ -120,7 +121,6 @@ type State = {
   // TODO(Kelly): remove reviewedIds once issue-list-removal-action feature is stable
   reviewedIds: string[];
   selectAllActive: boolean;
-  tagsLoading: boolean;
   undo: boolean;
   // Will be set to true if there is valid session data from issue-stats api call
   query?: string;
@@ -172,9 +172,7 @@ class IssueListOverview extends Component<Props, State> {
       queryCounts: {},
       queryMaxCount: 0,
       error: null,
-      isSidebarVisible: false,
       issuesLoading: true,
-      tagsLoading: true,
       memberList: {},
     };
   }
@@ -190,6 +188,8 @@ class IssueListOverview extends Component<Props, State> {
     this.fetchSavedSearches();
     this.fetchTags();
     this.fetchMemberList();
+    // let custom analytics take control
+    this.props.setDisableRouteAnalytics?.();
   }
 
   componentDidUpdate(prevProps: Props, prevState: State) {
@@ -371,10 +371,7 @@ class IssueListOverview extends Component<Props, State> {
 
   fetchTags() {
     const {api, organization, selection} = this.props;
-    this.setState({tagsLoading: true});
-    loadOrganizationTags(api, organization.slug, selection).then(() =>
-      this.setState({tagsLoading: false})
-    );
+    loadOrganizationTags(api, organization.slug, selection);
   }
 
   fetchSavedSearches() {
@@ -441,17 +438,8 @@ class IssueListOverview extends Component<Props, State> {
         count: currentQueryCount,
         hasMore: false,
       };
-      const tab = getTabs(organization).find(
-        ([tabQuery]) => currentTabQuery === tabQuery
-      )?.[1];
-      if (tab && !endpointParams.cursor) {
-        trackAdvancedAnalyticsEvent('issues_tab.viewed', {
-          organization,
-          tab: tab.analyticsName,
-          num_issues: queryCounts[currentTabQuery].count,
-        });
-      }
     }
+
     this.setState({queryCounts});
 
     // If all tabs' counts are fetched, skip and only set
@@ -594,7 +582,10 @@ class IssueListOverview extends Component<Props, State> {
 
           browserHistory.replace({
             pathname: redirect,
-            query: extractSelectionParameters(this.props.location.query),
+            query: {
+              referrer: 'issue-list',
+              ...extractSelectionParameters(this.props.location.query),
+            },
           });
           return;
         }
@@ -615,14 +606,26 @@ class IssueListOverview extends Component<Props, State> {
           (group: BaseGroup) => group.issueCategory === IssueCategory.PERFORMANCE
         ).length;
 
-        const page = parseInt(this.props.location.query.page, 10);
+        const page = this.props.location.query.page;
 
-        trackAdvancedAnalyticsEvent('issues_stream.count_perf_issues', {
+        const endpointParams = this.getEndpointParams();
+        const tabQueriesWithCounts = getTabsWithCounts(organization);
+        const currentTabQuery = tabQueriesWithCounts.includes(
+          endpointParams.query as Query
+        )
+          ? endpointParams.query
+          : null;
+        const tab = getTabs(organization).find(
+          ([tabQuery]) => currentTabQuery === tabQuery
+        )?.[1];
+
+        trackAdvancedAnalyticsEvent('issues_tab.viewed', {
           organization,
-          page,
+          tab: tab?.analyticsName,
+          page: page ? parseInt(page, 10) : 0,
           query,
           num_perf_issues: numPerfIssues,
-          num_total_issues: data.length,
+          num_issues: data.length,
         });
 
         this.fetchStats(data.map((group: BaseGroup) => group.id));
@@ -853,16 +856,6 @@ class IssueListOverview extends Component<Props, State> {
     this.transitionTo({cursor, page: nextPage});
   };
 
-  onSidebarToggle = () => {
-    const {organization} = this.props;
-    this.setState({
-      isSidebarVisible: !this.state.isSidebarVisible,
-    });
-    trackAdvancedAnalyticsEvent('issue.search_sidebar_clicked', {
-      organization,
-    });
-  };
-
   paginationAnalyticsEvent = (direction: string) => {
     trackAdvancedAnalyticsEvent('issues_stream.paginate', {
       organization: this.props.organization,
@@ -887,6 +880,7 @@ class IssueListOverview extends Component<Props, State> {
     savedSearch: (SavedSearch & {projectId?: number}) | null = this.props.savedSearch
   ) => {
     const query = {
+      referrer: 'issue-list',
       ...this.getEndpointParams(),
       ...newParams,
     };
@@ -1040,10 +1034,14 @@ class IssueListOverview extends Component<Props, State> {
 
     if (!isForReviewQuery(query)) {
       if (itemIds.length > 1) {
-        addMessage(t(`Reviewed ${itemIds.length} Issues`), 'success', {duration: 4000});
+        addMessage(
+          tn('Reviewed %s Issue', 'Reviewed %s Issues', itemIds.length),
+          'success',
+          {duration: 4000}
+        );
       } else {
         const shortId = itemIds.map(item => GroupStore.get(item)?.shortId).toString();
-        addMessage(t(`Reviewed ${shortId}`), 'success', {duration: 4000});
+        addMessage(t('Reviewed %s', shortId), 'success', {duration: 4000});
       }
       return;
     }
@@ -1082,13 +1080,13 @@ class IssueListOverview extends Component<Props, State> {
     actionType: 'Reviewed' | 'Resolved' | 'Ignored'
   ) => {
     if (itemIds.length > 1) {
-      addMessage(t(`${actionType} ${itemIds.length} Issues`), 'success', {
+      addMessage(`${actionType} ${itemIds.length} ${t('Issues')}`, 'success', {
         duration: 4000,
         ...(actionType !== 'Reviewed' && {undo: this.onUndo}),
       });
     } else {
       const shortId = itemIds.map(item => GroupStore.get(item)?.shortId).toString();
-      addMessage(t(`${actionType} ${shortId}`), 'success', {
+      addMessage(`${actionType} ${shortId}`, 'success', {
         duration: 4000,
         ...(actionType !== 'Reviewed' && {undo: this.onUndo}),
       });
@@ -1104,14 +1102,14 @@ class IssueListOverview extends Component<Props, State> {
     const projectIds = this.getSelectedProjectIds();
     const endpointParams = this.getEndpointParams();
 
-    return fetchTagValues(
-      this.props.api,
-      orgId,
-      key,
+    return fetchTagValues({
+      api: this.props.api,
+      orgSlug: orgId,
+      tagKey: key,
       search,
       projectIds,
-      endpointParams as any
-    );
+      endpointParams: endpointParams as any,
+    });
   };
 
   render() {
@@ -1120,8 +1118,6 @@ class IssueListOverview extends Component<Props, State> {
     }
 
     const {
-      isSidebarVisible,
-      tagsLoading,
       pageLinks,
       queryCount,
       queryCounts,
@@ -1132,7 +1128,7 @@ class IssueListOverview extends Component<Props, State> {
       issuesLoading,
       error,
     } = this.state;
-    const {organization, savedSearch, savedSearches, tags, selection, location, router} =
+    const {organization, savedSearch, savedSearches, selection, location, router} =
       this.props;
     const links = parseLinkHeader(pageLinks);
     const query = this.getQuery();
@@ -1173,10 +1169,6 @@ class IssueListOverview extends Component<Props, State> {
       query
     );
 
-    const layoutProps = {
-      fullWidth: !isSidebarVisible,
-    };
-
     return (
       <StyledPageContent>
         <IssueListHeader
@@ -1192,20 +1184,17 @@ class IssueListOverview extends Component<Props, State> {
           onSavedSearchSelect={this.onSavedSearchSelect}
           onSavedSearchDelete={this.onSavedSearchDelete}
           displayReprocessingTab={showReprocessingTab}
+          savedSearch={savedSearch}
           selectedProjectIds={selection.projects}
         />
-        <Layout.Body {...layoutProps}>
-          <Layout.Main {...layoutProps}>
+        <Layout.Body>
+          <Layout.Main fullWidth>
             <IssueListFilters
               organization={organization}
               query={query}
               savedSearch={savedSearch}
               sort={this.getSort()}
               onSearch={this.onSearch}
-              onSidebarToggle={this.onSidebarToggle}
-              isSearchDisabled={isSidebarVisible}
-              tagValueLoader={this.tagValueLoader}
-              tags={tags}
             />
 
             <Panel>
@@ -1259,28 +1248,17 @@ class IssueListOverview extends Component<Props, State> {
               paginationAnalyticsEvent={this.paginationAnalyticsEvent}
             />
           </Layout.Main>
-          {/* Avoid rendering sidebar until first accessed */}
-          {isSidebarVisible && (
-            <Layout.Side>
-              <IssueListSidebar
-                loading={tagsLoading}
-                tags={tags}
-                query={query}
-                parsedQuery={parseSearch(query) || []}
-                onQueryChange={this.onIssueListSidebarSearch}
-                tagValueLoader={this.tagValueLoader}
-              />
-            </Layout.Side>
-          )}
         </Layout.Body>
       </StyledPageContent>
     );
   }
 }
 
-export default withApi(
-  withPageFilters(
-    withSavedSearches(withOrganization(withIssueTags(withProfiler(IssueListOverview))))
+export default withRouteAnalytics(
+  withApi(
+    withPageFilters(
+      withSavedSearches(withOrganization(withIssueTags(withProfiler(IssueListOverview))))
+    )
   )
 );
 
