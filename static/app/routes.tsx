@@ -1340,7 +1340,7 @@ function buildRoutes() {
       ) : null}
       <Route
         path="/organizations/:orgId/alerts/"
-        component={make(() => import('sentry/views/alerts'))}
+        component={withDomainRedirect(make(() => import('sentry/views/alerts')))}
         key="org-alerts"
       >
         {alertChildRoutes({forCustomerDomain: false})}
