@@ -22,9 +22,6 @@ from .mail import COMMIT_EXAMPLE, MailPreview
 
 
 class DebugPerformanceIssueEmailView(View):
-    @override_options({"performance.issues.all.problem-creation": 1.0})
-    @override_options({"performance.issues.all.problem-detection": 1.0})
-    @override_options({"performance.issues.n_plus_one_db.problem-creation": 1.0})
     def get(self, request):
         project = Project.objects.first()
         org = project.organization
