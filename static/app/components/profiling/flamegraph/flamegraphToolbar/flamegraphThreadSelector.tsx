@@ -12,17 +12,17 @@ import {ProfileGroup} from 'sentry/utils/profiling/profile/importProfile';
 import {Profile} from 'sentry/utils/profiling/profile/profile';
 import {makeFormatter} from 'sentry/utils/profiling/units/units';
 
-interface ThreadSelectorProps {
+interface FlamegraphThreadSelectorProps {
   onThreadIdChange: (threadId: Profile['threadId']) => void;
   profileGroup: ProfileGroup;
   threadId: FlamegraphState['profiles']['threadId'];
 }
 
-function ThreadMenuSelector({
+function FlamegraphThreadSelector({
   threadId,
   onThreadIdChange,
   profileGroup,
-}: ThreadSelectorProps) {
+}: FlamegraphThreadSelectorProps) {
   const options: SelectValue<number>[] = useMemo(() => {
     return [...profileGroup.profiles].sort(compareProfiles).map(profile => {
       return {
@@ -119,4 +119,4 @@ const DetailsContainer = styled('div')`
   gap: ${space(1)};
 `;
 
-export {ThreadMenuSelector};
+export {FlamegraphThreadSelector};

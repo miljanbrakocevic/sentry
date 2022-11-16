@@ -14,9 +14,9 @@ import {
 } from 'sentry/utils/profiling/hooks/useVirtualizedTree/useVirtualizedTree';
 import {VirtualizedTreeNode} from 'sentry/utils/profiling/hooks/useVirtualizedTree/VirtualizedTreeNode';
 
-import {FrameCallersTableCell} from './frameStack';
-import {FrameStackContextMenu} from './frameStackContextMenu';
-import {FrameStackTableRow} from './frameStackTableRow';
+import {FrameCallersTableCell} from './flamegraphDrawer';
+import {FlamegraphTreeContextMenu} from './flamegraphTreeContextMenu';
+import {FlamegraphTreeTableRow} from './flamegraphTreeTableRow';
 
 function makeSortFunction(
   property: 'total weight' | 'self weight' | 'name',
@@ -77,7 +77,7 @@ function skipRecursiveNodes(n: VirtualizedTreeNode<FlamegraphFrame>): boolean {
   return n.node.node.isDirectRecursive();
 }
 
-interface FrameStackTableProps {
+interface FlamegraphTreeTableProps {
   canvasPoolManager: CanvasPoolManager;
   flamegraph: Flamegraph;
   formatDuration: Flamegraph['formatter'];
@@ -88,7 +88,7 @@ interface FrameStackTableProps {
   expanded?: boolean;
 }
 
-export function FrameStackTable({
+export function FlamegraphTreeTable({
   tree,
   expanded,
   referenceNode,
@@ -97,7 +97,7 @@ export function FrameStackTable({
   formatDuration,
   recursion,
   flamegraph,
-}: FrameStackTableProps) {
+}: FlamegraphTreeTableProps) {
   const [scrollContainerRef, setScrollContainerRef] = useState<HTMLDivElement | null>(
     null
   );
@@ -148,7 +148,7 @@ export function FrameStackTable({
       }
     ) => {
       return (
-        <FrameStackTableRow
+        <FlamegraphTreeTableRow
           ref={n => {
             r.ref = n;
           }}
@@ -232,7 +232,7 @@ export function FrameStackTable({
             </TableHeaderButton>
           </FrameNameCell>
         </FrameCallersTableHeader>
-        <FrameStackContextMenu
+        <FlamegraphTreeContextMenu
           onZoomIntoFrameClick={handleZoomIntoFrameClick}
           onHighlightAllFramesClick={onHighlightAllOccurencesClick}
           contextMenu={contextMenu}

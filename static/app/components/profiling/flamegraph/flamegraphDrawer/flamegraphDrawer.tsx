@@ -17,10 +17,10 @@ import {ProfileGroup} from 'sentry/utils/profiling/profile/importProfile';
 import {invertCallTree} from 'sentry/utils/profiling/profile/utils';
 import {useParams} from 'sentry/utils/useParams';
 
-import {FrameStackTable} from './frameStackTable';
+import {FlamegraphTreeTable} from './flamegraphTreeTable';
 import {ProfileDetails} from './profileDetails';
 
-interface FrameStackProps {
+interface FlamegraphDrawerProps {
   canvasPoolManager: CanvasPoolManager;
   flamegraph: Flamegraph;
   formatDuration: Flamegraph['formatter'];
@@ -31,7 +31,7 @@ interface FrameStackProps {
   onResize?: MouseEventHandler<HTMLElement>;
 }
 
-const FrameStack = memo(function FrameStack(props: FrameStackProps) {
+const FlamegraphDrawer = memo(function FlamegraphDrawer(props: FlamegraphDrawerProps) {
   const params = useParams();
   const flamegraphPreferences = useFlamegraphPreferences();
   const dispatch = useDispatchFlamegraphState();
@@ -226,7 +226,7 @@ const FrameStack = memo(function FrameStack(props: FrameStackProps) {
         </ProfilingDetailsListItem>
       </ProfilingDetailsFrameTabs>
 
-      <FrameStackTable
+      <FlamegraphTreeTable
         {...props}
         expanded={tab === 'call order'}
         recursion={recursion}
@@ -422,4 +422,4 @@ export const FrameCallersTableCell = styled('div')<{
   }
 `;
 
-export {FrameStack};
+export {FlamegraphDrawer};
